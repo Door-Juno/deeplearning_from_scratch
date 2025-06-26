@@ -235,3 +235,208 @@ y = forward(network, x) #   [0.31682708 0.69627909]
 print(y)
 ```
 위 코드는 입력층에서 출력층 까지 신호가 한 방향으로 전달되는 순전파(Forward Propagation)과정을 구현하였다. 이 코드의 출력이 실제 정답과 얼마나 차이나는지 오차를 계산하여 역전파(Backpropagation)를 통해 가중치와 편향을 업데이트하며 학습을 진행한다.
+
+## 3.5 출력층 설계하기
+머신러닝 문제는 **분류(classfication)** 과 **회귀(regression)** 문제로 나뉜다.
+- 분류 : 주어진 데이터가 어느 클래스에 속하느냐 하는 문제이다.
+- 회귀 : 입력 데이터에서 수치를 예측하는 문제
+
+이처럼 문제의 종류에 따라 신경망의 출력층에서 사용하는 활성화 함수를 다르게 설계해야한다.
+
+### 3.5.1 항등 함수와 소프트 맥스 함수 구현하기
+**항등 함수(identity function)**는 입력을 그대로 출력하는 함수이다.
+입력된 $x$가 있다면 $x$를 그대로 출력하는 $f(x)=x$의 형태이다.
+
+한편, 분류에서 사용하는 **소프트맥스 함수(softmax function)** 의 식은 다음과 같은데, 소프트맥스 함수는 다중 클래스 분류에서 각 클래스에 속할 확률을 출력하는데 유용하다.
+
+$$
+y_k =  \frac{\exp(a_{k})}{\sum_{i = 1}^{n} \exp(a_{i})}
+$$
+소프트맥스 함수의 분자는 입력신호 $a_k$의 지수 함수, 분모는 모든 입력 신호의 지수 함수의 합으로 구성된다.
+``` py
+def softmax(x):
+    exp_x = np.exp(x)
+    sum_exp_x = np.sum(exp_x)
+    y = exp_x / sum_exp_x
+    return y
+```
+다음과 같이 구현을 하면 **오버플로**가 발생하기 쉽다. 그렇기때문에 다른 수식을 사용해서 구현을 해보도록 하자.
+$$
+y_k =  \frac{\exp(a_{k})}{\sum_{i = 1}^{n} \exp(a_{i})} 
+= \frac{C\exp(a_{k})}{C\sum_{i = 1}^{n} \exp(a_{i})} \\
+= \frac{\exp(a_{k} + \log C)}{\sum_{i = 1}^{n} \exp(a_{i} + \log C)} \\
+=  \frac{\exp(a_{k} + C')}{\sum_{i = 1}^{n} \exp(a_{i} + C')}
+$$
+분모와 분자에$C$라는 임의의 정수를 곱하고, 이를 지수 함수 $\exp()$안으로 옮겨 $\log C$로 만든 후, 이를 $C'$으로 바꾸어주었다.
+``` py
+def softmax(x):
+    c = np.max(x) # 오버플로를 방지하기 위해 최댓값을 선택한다.
+    exp_x = np.exp(x - c) 
+    sum_exp_x = np.sum(exp_x)
+    y = exp_x / sum_exp_x
+    return y
+```
+
+소프트맥스 함수의 출력은 0에서 1.0 사이의 실수이다. 또, 소프트맥스 함수 출력의 총 합은 1이다.
+> 출력 총합이 1이 된다는 것으로 "확률"로 해석 가능하다.
+
+신경망을 이용한 분류에서는 일반적으로 가장 큰 출력을 내는 뉴런에 해당하는 클래스로만 인식한다.
+그리고 소프트맥스 함수를 적용해도 출력이 가장 큰 뉴런의 위치는 달라지지 않는다.
+결과적으로, 신경망을 분류할 때에는 출력층의 소프트맥스 함수를 생략해도 된다. 현업에서도 지수 함수 계산에 드는 자원 낭비를 줄이고자 출력층의 소프트맥스 함수는 생략하는 것이 일반적이다.
+
+### 3.5.4 출력층의 뉴런 수 정하기
+출력층의 뉴런 수는 풀려는 문제에 맞게 적절하게 정해야한다. 분류에서는 분류하고자 하는 클래스의 수로 설정하는 것이 일반적이다.
+예를 들어, 0~9등급으로 분류를 하겠다고 하면 출력층의 뉴런 수는 10개가 되는것이 일반적이다는 말이다.
+
+이처럼 출력층의 설계는 머신러닝의 문제의 종류를 이해하고 그에 맞는 활성화 함수와 뉴런 수를 선택하는 것이 중요하다.
+
+## 3.6 손글씨 숫자 인식
+이제 배운 것들을 응용하여 손글씨 숫자 분류를 해보도록 하겠다.
+
+### 3.6.1 MNIST 데이터셋
+이번 실습에서 활용하는 데이터셋은 `MNIST`라는 손글씨 숫자 이미지 집합이다. MINIST는 머신러닝 분야에서 아주 유명한 데이터 셋이다.
+![MNIST](../assets/MNIST.png)
+다음과 같은 훈련이미지 60,000장과 시험 이미지 10,000장이 준비되어있다.
+
+우리는 MNIST 데이터셋을 내려받아 이미지를 넘파이 배열로 변환하는 파이썬 스크립트를 사용하겠다.
+``` py
+import sys , os
+
+# 부모 디렉토리의 파일을 가져올 수 있도록 커서의 현 위치를 수정( 개인 환경마다 다름 )
+sys.path.append(os.path.join(os.path.dirname(__file__),'../..'))
+# 옮긴 위치의 파일을 열어서 함수 불러오기 
+from dataset.mnist import load_mnist 
+
+# 데이터 셋 받아오기.
+(x_train, t_train), (x_test, t_test) = load_mnist(flatten=True,normalize=False)
+
+print(x_train.shape)    #(60000, 784)
+print(t_train.shape)    #(60000,)
+print(x_test.shape)     #(10000, 784)
+print(t_test.shape)     #(10000,)
+```
+만일 이 글을 보고 실습을 해보고 싶다면
+
+[WegraLee's github](https://github.com/WegraLee/deep-learning-from-scratch)
+
+에서 데이터셋을 받아올 수 있다.
+
+데이터를 받아온거에서 그치지않고 이미지 파일을 실행해보자.
+``` py
+import sys , os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  
+# 부모 디렉터리의 파일을 가져올 수 있도록 설정
+# 옮긴 위치의 파일을 열어서 함수 불러오기 
+from dataset.mnist import load_mnist 
+
+import numpy as np
+from PIL import Image
+
+def img_show(img):
+    pil_img = Image.fromarray(np.uint8(img))
+    pil_img.show()
+
+# 데이터 셋 받아오기.
+(x_train, t_train), (x_test, t_test) = load_mnist(flatten=True,normalize=False)
+
+img = x_train[0]
+label = t_train[0]
+print(label) # 5
+
+print(img.shape) # (784,)
+img = img.reshape(28,28) # 원래 이미지 모양으로 변형
+print(img.shape) #(28,28)
+
+img_show(img)
+```
+![test](../assets/test.png)
+
+다음과 같이 이미지가 잘 노출된다 !
+
+### 3.6.2 신경망의 추론
+이제 이 MNIST 데이터셋을 가지고 추론을 할 신경망을 구현해보자.
+
+이 신경망의 입력층은 이미지 크기가 28 * 28 이라서 748로 설정을 하고, 출력층은 숫자 0에서 9를 구분하는 문제이므로 10개로 설정해주었다.
+
+한편 은닉층은 총 두 개로 구성되며 첫 은닉층에는 50개의 뉴런을, 두 번째 은닉층에는 100개의 뉴런을 배치하겠다. (임의로 정한 값)
+``` py
+import sys , os
+
+# 부모 디렉토리의 파일을 가져올 수 있도록 커서의 현 위치를 수정( 개인 환경마다 다름 )
+sys.path.append(os.path.join(os.path.dirname(__file__),'../..'))
+# 옮긴 위치의 파일을 열어서 함수 불러오기 
+from dataset.mnist import load_mnist 
+
+import numpy as np
+import pickle
+
+from activation_function import *
+
+def get_data() :
+    # 데이터 셋 받아오기.
+    (x_train, t_train), (x_test, t_test) = load_mnist(flatten=True,normalize=True,one_hot_label=False)
+    return x_test, t_test
+
+def init_network() :
+    with open(os.path.dirname(__file__) + "/sample_weigh.pkl",'rb') as f:
+        network = pickle.load(f)
+        
+    return network
+
+def predict(network, x):
+    w1, w2, w3 = network['W1'], network['W2'], network['W3']
+    b1, b2, b3 = network['b1'], network['b2'], network['b3']
+
+    a1 = np.dot(x, w1) + b1
+    z1 = sigmoid(a1)
+    a2 = np.dot(z1, w2) + b2
+    z2 = sigmoid(a2)
+    a3 = np.dot(z2, w3) + b3
+    y = softmax(a3)
+
+    return y
+
+x,t = get_data()    # 데이터 불러오기
+network = init_network()    # 신경망 구성하기
+
+accuracy_cnt = 0
+
+for i in range(len(x)) : 
+    y = predict(network, x[i])
+    p = np.argmax(y) # 확률이 가장 높은 원소의 인덱스를 얻는다.
+    if p == t[i] :
+        accuracy_cnt += 1
+
+print("Accuracy :" + str(float(accuracy_cnt) / len(x))) 
+# Accuracy :0.9352
+```
+- `init_network()`
+  - pickle 파일인 `sampe_weight.pkl`에 저장된 학습된 가충치 매개변수를 읽어온다.
+  - 이 파일에는 가중치와 편향 변수가 딕셔너리 변수로 저장되어있다.
+- `load_mnist`의 인수인 `normalize`를 True로 설정하면 0~255범위인 픽셀 값들을 0.0 ~ 1.0의 범위로 정규화 한다.
+
+정답을 판정하는 기준은 `np.argmax(y)`를 통해 해당 배열에서 확률이 가장 높은 원소의 인덱스를 구하여 예측 결과를 구하고, 이 결과(`p`)와 정답 레이블(`t[i]`)를 비교화여 같다면 정답으로 처리하는것이다.
+
+위 함수의 실행결과 `Accuracy : 0.9352` 가 나온다. 올바르게 분류한 비율이 93.52% 이라는 의미이다.
+
+### 3.6.3 배치 처리
+이번에는 입력 데이터와 가중치 매개변수의 '형상'에 대해 주의 해 보도록 하겠다.
+``` py
+x , _ = get_data()
+network = init_network()
+w1, w2, w3 = network['W1'], network['W2'], network['W3']
+
+print(x.shape)      # (10000,784)
+print(x[0].shape)   # (784,)
+print(w1.shape)     # (784,50)
+print(w2.shape)     # (50,100)
+print(w3.shape)     # (100,10)
+```
+이 결과에서 다차원 배열의 대응하는 차원의 원소 수가 일치함을 확인할 수 있다.
+
+(784(입력층의 수) -> 50(은닉 1층의 수) -> 100(은닉 2층의 수) -> 10(출력층의 수))
+
+$$
+형상 : 784 ~~784\times50~~50\times100~~100\times10~~10
+$$
+
