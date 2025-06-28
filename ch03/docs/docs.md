@@ -440,3 +440,28 @@ $$
 형상 : 784 ~~784\times50~~50\times100~~100\times10~~10
 $$
 
+원소 784개로 구성된 1차원 배열 (원래는 28 X 28인 2차원 배열)이 입력되어 마지막에는 원소가 10개인 1차원 배열이 출력되는 흐름을 나타내고 있다.
+
+이처럼 하나로 묶은 입력 데이터를 **배치 batch**라고 한다.
+배치 처리는 컴퓨터로 계산할 때 큰 이점을 준다.
+
+``` python
+x, t = get_data()
+network = init_network()
+
+batch_size = 100
+accuracy_cnt = 0
+
+for i in range(0, len(x), batch_size) :
+    x_batch = x[i:i+batch_size]
+    y_batch = predict(network, x_batch)
+    p = np.argmax(y_batch, axis=1)
+    accuracy_cnt += np.sum(p == t[i:i+batch_size])
+
+print("Accuracy: "+ str(float(accuracy_cnt)/len(x)))
+```
+
+## 3.7 정리
+이번 장에서는 신경망의 기본 구조와 작동 원리를 깊이 있게 탐구했다. 특히 신경망이 데이터로부터 가중치 매개변수를 자동으로 학습하는 능력의 중요성을 강조하며, 이를 가능하게 하는 다양한 요소들을 살펴보았다.
+
+다음 챕터인 4에서는 신경망 학습이란 주제를 공부해보겠다 !
